@@ -5,7 +5,7 @@ setup(
     version = '1.0',
     packages = find_packages(),
     
-    author = 'Vickenty Fesunov <vickenty@yandex-team.ru>',
+    author = 'Vickenty Fesunov <kent@setattr.net>',
     license = 'BSD',
     description = 'Elliptics file storage backend for Django.',
     url = 'http://github.com/vickenty/django-elliptics',
