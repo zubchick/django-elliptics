@@ -10,26 +10,25 @@ class BaseError (Exception):
 
 class ModeError (BaseError):
     """File operation incompatible with file access mode."""
-    def __init__(self, message):
-        super(ModeError, self).__init__(message)
 
 class HTTPError (BaseError):
     """Elliptics request failed."""
-    def __init__(self, response):
-        self.response = response
 
 class SaveError (HTTPError):
     """Failed to store file to the backend."""
+
     def __str__(self):
+	response = self.args[0]
         return 'got status code %s while sending to %s' % (
-            self.resposne.status_code, self.response.url)
+            response.status_code, response.url)
 
 class ReadError (HTTPError):
     """Failed to read from the backend."""
 
     def __str__(self):
+	response = self.args[0]
         return 'got status code %s while reading %s' % (
-            self.response.status_code, self.response.url)
+            response.status_code, response.url)
 
 class EllipticsStorage (storage.Storage):
     """Django file storage backend for Elliptics via HTTP API.
