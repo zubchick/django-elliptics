@@ -1,4 +1,4 @@
-import sys
+import os, sys
 from django import conf
 
 conf.settings = conf.global_settings
@@ -13,6 +13,11 @@ conf.settings.DATABASES = {
         'ENGINE': 'django.db.backends.sqlite3',
     }
 }
+
+env_elliptics_url = os.environ.get('ELLIPTICS_URL')
+if env_elliptics_url:
+    conf.settings.ELLIPTICS_PUBLIC_URL = env_elliptics_url
+    conf.settings.ELLIPTICS_PRIVATE_URL = env_elliptics_url
 
 from django.test import utils
 
