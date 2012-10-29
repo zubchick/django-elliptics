@@ -35,11 +35,13 @@ class EllipticsStorage (storage.Storage):
 
     Configuration parameters:
 
+    ELLIPTICS_PREFIX - prefix to prepend to the Django names before passing them to the storage.
     ELLIPTICS_PUBLIC_URL - URL pointing to public interface of the Elliptics cluster to serve files from.
     ELLIPTICS_PRIVATE_URL - URL to send modification requests to.
     """
 
     default_settings = {
+        'prefix': '',
         'public_url': 'http://localhost:8080/',
         'private_url': 'http://localhost:9000/',
     }
@@ -95,15 +97,14 @@ class EllipticsStorage (storage.Storage):
 
         return r.content
 
-    def _make_private_url(self, *parts, **args):
-        return self._make_url(self.settings.private_url, *parts, **args)
+    def _make_private_url(self, command, *parts, **args):
+        return self._make_url(self.settings.private_url, command, self.settings.prefix, *parts, **args)
 
-    def _make_public_url(self, *parts, **args):
-        return self._make_url(self.settings.public_url, *parts, **args)
+    def _make_public_url(self, command, *parts, **args):
+        return self._make_url(self.settings.public_url, command, self.settings.prefix, *parts, **args)
 
     def _make_url(self, *parts, **args):
-        need_slash = False
-        url = '/'.join(part.strip('/') for part in parts)
+        url = '/'.join(part.strip('/') for part in parts if part)
 
         if args:
             url += '?' + urllib.urlencode(args)

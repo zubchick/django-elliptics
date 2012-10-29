@@ -3,8 +3,10 @@ from django.test import TestCase
 from django_elliptics import storage
 
 class EllipticsStorageTest (TestCase):
+    prefix = ''
+
     def setUp(self):
-        self.storage = storage.EllipticsStorage()
+        self.storage = storage.EllipticsStorage(prefix=self.prefix)
         self.sample1 = '<xml>test data</xml>'
         self.sample2 = '<xml>more test data</xml>'
 
@@ -61,3 +63,8 @@ class EllipticsStorageTest (TestCase):
         self.storage.delete('test.xml')
         self.assertFalse(self.storage.exists('test.xml'))
 
+class PrefixTest (EllipticsStorageTest):
+    prefix = 'prefix'
+
+class LongPrefixTest (EllipticsStorageTest):
+    prefix = 'long/prefix'
