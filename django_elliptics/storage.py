@@ -220,7 +220,7 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
                 started = time.time()
                 response = self._request(method, url, *args, timeout=timeout, **kwargs)
             except socket.gaierror as exc:
-                raise ValueError('incorrect elliptics request {0} "{1}": {2}'.format(method, url, repr(exc)))
+                raise BaseError('incorrect elliptics request {0} "{1}": {2}'.format(method, url, repr(exc)))
             except Timeout, exception:
                 error_message = str(exception)
             else:
