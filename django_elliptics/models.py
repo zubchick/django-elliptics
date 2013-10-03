@@ -47,12 +47,12 @@ STORAGE = configure_storage()
 class SerializedPropsMixInManager(models.Manager):
     def get_field_from_storage(self, data, single_field=None):
         """
-        Read fields' data from Mulca wihtout creating model's object.
+        Read fields' data from key-value storage wihtout creating model's object.
 
         string, string|None -> anything
 
         """
-        # Get data from Mulca
+        # Get data from storage
         if data:
             _data = self.model._storage_loads(STORAGE._open(data, 'r').read())
         else:
@@ -114,8 +114,8 @@ class SerializedPropsMixIn(models.Model):
 
     def __getattr__(self, name):
         """
-        Returns value of Mulca-stored model's field.
-        If field isn't stored into Mulca, returns default value
+        Returns value of model's field from key-value storage.
+        If field isn't stored into storage, returns default value
         based on model's _serialized_props_defaults property.
         """
         if name in self._serialized_props:
@@ -130,7 +130,7 @@ class SerializedPropsMixIn(models.Model):
 
     def __setattr__(self, name, value):
         """
-        Set value for Mulca-stored model's field.
+        Set value for model's field from key-value storage.
         """
         if name in self._serialized_props:
             self._init_data()
@@ -140,7 +140,7 @@ class SerializedPropsMixIn(models.Model):
 
     def _init_data(self):
         """
-        Implements lazy loading of Mulca-stored data.
+        Implements lazy loading of data from key-value storage.
         """
         if not hasattr(self, '_data'):
             if self.elliptics_id:
@@ -150,12 +150,12 @@ class SerializedPropsMixIn(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Saves model's data to RDBMS and Mulca both.
+        Saves model's data to RDBMS and key-value storage both.
         See also receivers of pre_save and post_save signals in this file.
         """
         lock = False
 
-        # Save serialized properties to Mulca only if they have been
+        # Save serialized properties to storage only if they have been
         # loaded and changed.
         elliptics_id = self.make_elliptics_id()
         if hasattr(self, '_data') and self._serialized_props_modified:
