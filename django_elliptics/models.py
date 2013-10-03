@@ -47,7 +47,7 @@ STORAGE = configure_storage()
 class SerializedPropsMixInManager(models.Manager):
     def get_field_from_storage(self, data, single_field=None):
         """
-        Read fields' data from key-value storage wihtout creating model's object.
+        Read field's data from storage system without creating model's object.
 
         string, string|None -> anything
 
@@ -91,7 +91,9 @@ class SerializedPropsMixInManager(models.Manager):
 
 class SerializedPropsMixIn(models.Model):
     """
-    @todo comment
+    It is mixin for Django models, allowing to operate transparently with the Elliptics.
+    For correctly usage derive your model class from this class as in the following example:
+    class Page(SerializedPropsMixIn, models.Model)
     """
     # List of properties
     _serialized_props = tuple()
@@ -114,7 +116,7 @@ class SerializedPropsMixIn(models.Model):
 
     def __getattr__(self, name):
         """
-        Returns value of model's field from key-value storage.
+        Returns value of model's field from storage system.
         If field isn't stored into storage, returns default value
         based on model's _serialized_props_defaults property.
         """
@@ -130,7 +132,7 @@ class SerializedPropsMixIn(models.Model):
 
     def __setattr__(self, name, value):
         """
-        Set value for model's field from key-value storage.
+        Set value for model's field from storage system.
         """
         if name in self._serialized_props:
             self._init_data()
@@ -140,7 +142,7 @@ class SerializedPropsMixIn(models.Model):
 
     def _init_data(self):
         """
-        Implements lazy loading of data from key-value storage.
+        Implements lazy loading of data from storage system.
         """
         if not hasattr(self, '_data'):
             if self.elliptics_id:
@@ -150,7 +152,7 @@ class SerializedPropsMixIn(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Saves model's data to RDBMS and key-value storage both.
+        Saves model's data to RDBMS and Elliptics both.
         See also receivers of pre_save and post_save signals in this file.
         """
         lock = False

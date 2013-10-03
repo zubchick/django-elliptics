@@ -86,6 +86,12 @@ class EllipticsStorage (storage.Storage):
         self.session.get(url)
 
     def exists(self, name):
+        '''
+        Returns True if the given name already exists in the storage system, or False if the name is available.
+
+        Note: override this method with False return value if you want to overwrite the contents with the given name.
+        This will save your application from unnecessary request in the storage system.
+        '''
         url = self._make_private_url('get', name)
         r = self.session.head(url)
         return r.status_code == 200
