@@ -28,7 +28,7 @@ def configure_storage(prefix=None, **kwargs):
         assert isinstance(prefix, str), 'prefix must be a sting'
         storage_class_name = '_'.join([prefix.upper(), storage_class_name])
 
-    storage = getattr(settings, storage_class_name)
+    storage = getattr(settings, storage_class_name, 'django_elliptics.storage.EllipticsStorage')
 
     module_name, class_name = storage.rsplit('.', 1)
     try:
