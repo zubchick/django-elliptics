@@ -4,9 +4,11 @@ from django_elliptics import storage
 
 class EllipticsStorageTest (TestCase):
     prefix = ''
+    storage_class_name = 'EllipticsStorage'
 
     def setUp(self):
-        self.storage = storage.EllipticsStorage(prefix=self.prefix)
+        self.storage = getattr(__import__('django_elliptics.storage', {}, {}, [self.storage_class_name]),
+                               self.storage_class_name)  (prefix=self.prefix)
         self.sample1 = '<xml>test data</xml>'
         self.sample2 = '<xml>more test data</xml>'
 
@@ -63,8 +65,15 @@ class EllipticsStorageTest (TestCase):
         self.storage.delete('test.xml')
         self.assertFalse(self.storage.exists('test.xml'))
 
+
 class PrefixTest (EllipticsStorageTest):
     prefix = 'prefix'
 
+
 class LongPrefixTest (EllipticsStorageTest):
     prefix = 'long/prefix'
+
+
+class TimeoutAwareEllipticsStorageTest(EllipticsStorageTest):
+    prefix = ''
+    storage_class_name = 'TimeoutAwareEllipticsStorage'
