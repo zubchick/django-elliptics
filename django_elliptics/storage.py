@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import requests
 import urllib
 import logging
@@ -12,19 +14,19 @@ from django.core.files import base, storage
 logger = logging.getLogger(__name__)
 
 
-class BaseError (Exception):
+class BaseError(Exception):
     """Generic error for EllipticsStorage backend."""
 
 
-class ModeError (BaseError):
+class ModeError(BaseError):
     """File operation incompatible with file access mode."""
 
 
-class HTTPError (BaseError):
+class HTTPError(BaseError):
     """Elliptics request failed."""
 
 
-class SaveError (HTTPError):
+class SaveError(HTTPError):
     """Failed to store file to the backend."""
 
     def __str__(self):
@@ -45,8 +47,10 @@ class ReadError (HTTPError):
 class TimeoutError(ReadError, SaveError):
     """Timeout error."""
 
-    # ReadError and SaveError override __str__, because they get object with a response to the input.
-    # In TimeoutError is impossible to pass the object with a response, therefore overriding the back.
+    # ReadError and SaveError override __str__,
+    # because they get object with a response to the input.
+    # In TimeoutError it is impossible to pass an object with a response,
+    # therefore overriding is introduced again.
     def __str__(self):
         return super(HTTPError, self).__str__()
 
@@ -56,8 +60,10 @@ class EllipticsStorage (storage.Storage):
 
     Configuration parameters:
 
-    ELLIPTICS_PREFIX - prefix to prepend to the Django names before passing them to the storage.
-    ELLIPTICS_PUBLIC_URL - URL pointing to public interface of the Elliptics cluster to serve files from.
+    ELLIPTICS_PREFIX - prefix to prepend to the Django names before passing
+      them to the storage.
+    ELLIPTICS_PUBLIC_URL - URL pointing to public interface of the Elliptics
+      cluster to serve files from.
     ELLIPTICS_PRIVATE_URL - URL to send modification requests to.
     """
 
@@ -71,7 +77,7 @@ class EllipticsStorage (storage.Storage):
         self.settings = self._build_settings(kwargs)
         self.session = requests.session()
         self.session.config['keep_alive'] = False
-	
+
     def _build_settings(self, settings):
         return type('settings', (), dict(
             (name, settings.get(name, self._get_default(name)))
@@ -86,12 +92,13 @@ class EllipticsStorage (storage.Storage):
         self.session.get(url)
 
     def exists(self, name):
-        '''
-        Returns True if the given name already exists in the storage system, or False if the name is available.
+        """
+        Return True if the given name already exists in the storage.
 
-        Note: override this method with False return value if you want to overwrite the contents with the given name.
-        This will save your application from unnecessary request in the storage system.
-        '''
+        Note: override this method with False return value if you
+        want to overwrite the contents with the given name.
+        This will save your application from one unnecessary request in the storage.
+        """
         url = self._make_private_url('get', name)
         r = self.session.head(url)
         return r.status_code == 200
@@ -106,7 +113,7 @@ class EllipticsStorage (storage.Storage):
         args = {}
 
         if append:
-            args['ioflags'] = 2 # DNET_IO_FLAGS_APPEND = (1<<1)
+            args['ioflags'] = 2  # DNET_IO_FLAGS_APPEND = (1<<1)
 
         url = self._make_private_url('upload', name, **args)
         r = self.session.post(url, data=content)
@@ -125,10 +132,16 @@ class EllipticsStorage (storage.Storage):
         return r.content
 
     def _make_private_url(self, command, *parts, **args):
-        return self._make_url(self.settings.private_url, command, self.settings.prefix, *parts, **args)
+        return self._make_url(
+            self.settings.private_url,
+            command, self.settings.prefix, *parts, **args
+        )
 
     def _make_public_url(self, command, *parts, **args):
-        return self._make_url(self.settings.public_url, command, self.settings.prefix, *parts, **args)
+        return self._make_url(
+            self.settings.public_url, command, self.settings.prefix,
+            *parts, **args
+        )
 
     def _make_url(self, *parts, **args):
         url = '/'.join(part.strip('/') for part in parts if part)
@@ -184,7 +197,9 @@ class EllipticsFile (base.File):
             return
 
         if self._mode in ('w', 'a'):
-            self._storage._save(self.name, self._stream.getvalue(), append=(self._mode == 'a'))
+            self._storage._save(
+                self.name, self._stream.getvalue(), append=(self._mode == 'a')
+            )
 
     @property
     def size(self):
@@ -196,6 +211,12 @@ class EllipticsFile (base.File):
 
     def seek(self, offset, mode=0):
         self._stream.seek(offset, mode)
+
+
+FAILED_ATTEMPTS_MESSAGE = (
+    '%s failed attempts of %s to connect to Elliptics '
+    '(%s %s). Timeout: %s seconds. "%s"'
+)
 
 
 class TimeoutAwareEllipticsStorage(EllipticsStorage):
@@ -215,32 +236,42 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
     def _timeout_request(self, method, url, *args, **kwargs):
         error_message = ''
         if method == 'POST':
-            retries = self.retries_post
-            timeout = self.timeout_post
+            retries = self.RETRIES_POST
+            timeout = self.TIMEOUT_POST
         else:
-            retries = self.retries_get
-            timeout = self.timeout_get
+            retries = self.RETRIES_GET
+            timeout = self.TIMEOUT_GET
 
         for retry_count in xrange(retries):
             try:
                 started = time.time()
                 response = self._request(method, url, *args, timeout=timeout, **kwargs)
             except socket.gaierror as exc:
-                raise BaseError('incorrect elliptics request {0} "{1}": {2}'.format(method, url, repr(exc)))
+                raise BaseError(
+                    'Incorrect request to Elliptics {0} "{1}": {2}'.format(
+                        method, url, repr(exc)
+                    ), exc
+                )
             except Timeout, exception:
                 error_message = str(exception)
             else:
-                logger.info('%s %s %s timeout=%s retries=%s time=%.4f',
-                            method, url, args or '', timeout, retry_count, time.time() - started)
+                logger.info(
+                    '%s %s %s timeout=%s retries=%s time=%.4f',
+                    method, url, args or '', timeout, retry_count, time.time() - started
+                )
                 break
         else:
-            logger.error('%s failed attempts of %s to connect to Elliptics (%s %s). Timeout: %s seconds. "%s"',
-                         retry_count + 1, retries, method, url, timeout, error_message)
+            logger.error(
+                FAILED_ATTEMPTS_MESSAGE,
+                retry_count + 1, retries, method, url, timeout, error_message
+            )
             raise TimeoutError(error_message)
 
         if retry_count:
-            logger.warning('%s failed attempts of %s to connect to Elliptics (%s %s). Timeout: %s seconds. "%s"',
-                           retry_count, retries, method, url, timeout, error_message)
+            logger.warning(
+                FAILED_ATTEMPTS_MESSAGE,
+                retry_count, retries, method, url, timeout, error_message
+            )
 
         return response
 
