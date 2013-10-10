@@ -3,11 +3,12 @@ import urllib
 import logging
 import time
 import socket
+import threading
 from cStringIO import StringIO
-from requests import Timeout
 
 from django import conf
 from django.core.files import base, storage
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,9 @@ class TimeoutError(ReadError, SaveError):
         return super(HTTPError, self).__str__()
 
 
-class EllipticsStorage (storage.Storage):
-    """Django file storage backend for Elliptics via HTTP API.
+class BaseEllipticsStorage(storage.Storage):
+    """
+    Base Django file storage backend for Elliptics via HTTP API.
 
     Configuration parameters:
 
@@ -70,8 +72,8 @@ class EllipticsStorage (storage.Storage):
     def __init__(self, **kwargs):
         self.settings = self._build_settings(kwargs)
         self.session = requests.session()
-        self.session.config['keep_alive'] = False
-	
+        self.session.config['keep_alive'] = True
+
     def _build_settings(self, settings):
         return type('settings', (), dict(
             (name, settings.get(name, self._get_default(name)))
@@ -134,7 +136,12 @@ class EllipticsStorage (storage.Storage):
         url = '/'.join(part.strip('/') for part in parts if part)
 
         if args:
-            url += '?' + urllib.urlencode(args)
+            appendix = ''
+            if 'commit' in args:
+                # this should be a non-value parameter
+                appendix = '&commit'
+                del args['commit']
+            url += '?' + urllib.urlencode(args) + appendix
 
         return url
 
@@ -198,19 +205,43 @@ class EllipticsFile (base.File):
         self._stream.seek(offset, mode)
 
 
-class TimeoutAwareEllipticsStorage(EllipticsStorage):
+class EllipticsStorage(BaseEllipticsStorage):
+    """
+    Django storage backend to Elliptics.
+
+    Supports uploads in threads.
+    Configuration: same as in base class + some more.
+
+    """
+    # timeout of http-session on read requests
     timeout_get = getattr(conf.settings, 'ELLIPTICS_GET_CONNECTION_TIMEOUT', 3)
+    # number of retries in http-session on read requests
     retries_get = getattr(conf.settings, 'ELLIPTICS_GET_CONNECTION_RETRIES', 3)
+    # timeout of http-session on save requests
     timeout_post = getattr(conf.settings, 'ELLIPTICS_POST_CONNECTION_TIMEOUT', 5)
+    # number of retries in http-session on save requests
     retries_post = getattr(conf.settings, 'ELLIPTICS_POST_CONNECTION_RETRIES', 9)
+    # size of a chunk in bytes, to split content into
+    CHUNK_SIZE = getattr(conf.settings, 'ELLIPTICS_UPLOAD_CHUNK_SIZE', 20 * 1024 * 1024)
+    # maximum number of instantaneous http-sessions to elliptics
+    MAX_HTTP_SESSIONS = getattr(conf.settings, 'ELLIPTICS_MAX_SESSIONS', 5)
+
+    # active upload sessions
+    __active_threads = None
+
+    def __init__(self, **kwargs):
+        super(EllipticsStorage, self).__init__(**kwargs)
+        self.session.config['pool_connections'] = self.MAX_HTTP_SESSIONS
+        self.session.config['pool_maxsize'] = self.MAX_HTTP_SESSIONS
+        self.__active_threads = {}
 
     def _request(self, method, url, *args, **kwargs):
-        if method == 'POST':
-            return self.session.post(url, *args, **kwargs)
-        elif method == 'GET':
-            return self.session.get(url, *args, **kwargs)
+        if method in ('POST', 'GET', 'HEAD'):
+            logger.debug('Sending "%s" to url of Elliptics "%s"', method, url)
+            return getattr(self.session, method.lower())(url, *args, **kwargs)
+
         else:
-            return self.session.head(url, *args, **kwargs)
+            raise NotImplementedError('The requested method is not acceptable')
 
     def _timeout_request(self, method, url, *args, **kwargs):
         error_message = ''
@@ -227,11 +258,13 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
                 response = self._request(method, url, *args, timeout=timeout, **kwargs)
             except socket.gaierror as exc:
                 raise BaseError('incorrect elliptics request {0} "{1}": {2}'.format(method, url, repr(exc)))
-            except Timeout, exception:
+            except requests.Timeout, exception:
                 error_message = str(exception)
             else:
-                logger.info('%s %s %s timeout=%s retries=%s time=%.4f',
-                            method, url, args or '', timeout, retry_count, time.time() - started)
+                logger.debug(
+                    'Success with "%s" to Elliptics "%s" at try %d in time=%.4f',
+                    method, url, retry_count, time.time() - started
+                )
                 break
         else:
             logger.error('%s failed attempts of %s to connect to Elliptics (%s %s). Timeout: %s seconds. "%s"',
@@ -256,10 +289,33 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
         return response.content
 
     def _save(self, name, content, append=False):
+        """
+
+        @raise: BaseError
+        """
         args = {}
         if append:
-            args['ioflags'] = 2  # DNET_IO_FLAGS_APPEND = (1<<1)
+            return self._save_with_append(name, content, **args)
 
+        try:
+            content, length = self.__guess_content_size(content)
+            return self._save_file(name, content, length, **args)
+        except NotImplementedError:
+            # the file will be sent in a single request.
+            # this may and will lead to timeouts when uploading big files
+            logger.warning(
+                'Size of file "%s" is unknown, I send it in single request',
+                type(content)
+            )
+            url = self._make_private_url('upload', name, **args)
+            response = self._timeout_request('POST', url, data=content)
+
+            if response.status_code != 200:
+                raise SaveError(response)
+            return name
+
+    def _save_with_append(self, name, content, **args):
+        args['ioflags'] = 2  # DNET_IO_FLAGS_APPEND = (1<<1)
         url = self._make_private_url('upload', name, **args)
         response = self._timeout_request('POST', url, data=content)
 
@@ -267,6 +323,169 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
             raise SaveError(response)
 
         return name
+
+    def __guess_content_size(self, content):
+        """
+        Return content and its size.
+
+        @param content:
+        @rtype: tuple
+        @raise: NotImplementedError
+        """
+        if hasattr(content, 'size'):
+            if content.size is not None:
+                return content, content.size
+            logger.info(
+                'The size of content is None, content type is "%s"',
+                type(content)
+            )
+            if hasattr(content, 'read'):
+                # we have to read the whole file, this hits memory consumption
+                logger.warning(
+                    'Please set the size of content explicitly for "%s"',
+                    type(content)
+                )
+                read_content = content.read()
+                return read_content, len(content)
+
+        try:
+            # may be a string or a bytestring
+            return content, len(content)
+        except Exception, exc:
+            raise NotImplementedError(
+                'The size of object cannot be guessed: "%s"', repr(exc)
+            )
+
+    def _save_file(self, name, content, length, **args):
+        """
+        Save the file into Elliptics using multiple threads.
+
+        @param name: name of entity in Elliptics
+        @param content: the File-like object, or a (byte-)string, iterable.
+        @param length: length of content
+        @param args: additional args for the POST-request.
+        @return: final name of entity
+        @type name: basestring
+        @type length: int
+        @rtype: str
+        """
+        uploaded = 0
+        logger.debug('Uploading %d bytes into Elliptics', length)
+
+        while uploaded < length:
+            request_args = args.copy()
+            chunk_length = min(self.CHUNK_SIZE, length - uploaded)
+            if uploaded == 0 and chunk_length < length:
+                # the first request and there will be more than 1 of requests
+                # reserve space in storage
+                request_args['prepare'] = length
+
+            if chunk_length < length:
+                # gonna have more than 1 request
+                request_args['offset'] = uploaded
+                request_args['size'] = chunk_length
+
+            if uploaded + chunk_length >= length:
+                # this is the last request, we should commit
+                request_args['commit'] = None  # the value is not important
+
+            url = self._make_private_url('upload', name, **request_args)
+
+            # upload
+
+            if uploaded == 0 or uploaded + chunk_length >= length:
+                self.__wait_till_all_threads_finish()
+                # the first and the last requests are synchronous.
+                response = self._timeout_request(
+                    'POST', url, data=self._create_chunk(content, uploaded)
+                )
+                if response.status_code != 200:
+                    raise SaveError(response)
+
+            else:
+                self._do_upload(url, self._create_chunk(content, uploaded))
+
+            uploaded += chunk_length
+
+        return name
+
+    def _timeout_request_with_result(self, *args, **kwargs):
+        try:
+            response = self._timeout_request(*args, **kwargs)
+        except BaseError as exc:
+            self.__active_threads[threading.current_thread()] = exc
+        else:
+            self.__active_threads[threading.current_thread()] = response
+
+    def _create_chunk(self, content, from_byte):
+        """
+        Create chunk for uploading.
+
+        @param content: File-like object or a string
+        @type from_byte: int
+        """
+        if hasattr(content, 'read'):
+            return content.read(self.CHUNK_SIZE)
+        return content[from_byte:from_byte + self.CHUNK_SIZE]
+
+    def __wait_till_all_threads_finish(self):
+        for thread in tuple(self.__active_threads.keys()):
+            self.__collect_thread_status_and_kill(thread)
+
+    def __collect_thread_status_and_kill(self, thread):
+        thread.join(self.timeout_post + 0.5)
+        if self.__active_threads[thread] is None:
+            logger.warning(
+                'Thread "%s" did not make it in time to upload into Elliptics',
+                repr(thread)
+            )
+            # did not make it in time
+            raise BaseError('One of requests timed out')
+        elif isinstance(self.__active_threads[thread], BaseError):
+            raise self.__active_threads[thread]
+        else:
+            if self.__active_threads[thread].status_code != 200:
+                raise SaveError(self.__active_threads[thread])
+        del self.__active_threads[thread]
+
+    def _do_upload(self, url, chunk):
+        """
+        Do the request to Elliptics.
+
+        Start a thread with HTTP-request. When the pool is full it waits till
+        anyone from the pool has finished and reuses it.
+
+        @raise: SaveError
+        """
+
+        if len(self.__active_threads) == self.MAX_HTTP_SESSIONS:
+            # wait till anyone exits. Expected time is slightly bigger
+            # than the timeout time.
+            for worker in tuple(self.__active_threads.keys()):
+                if not worker.is_alive():
+                    # get it out of the queue
+                    self.__collect_thread_status_and_kill(worker)
+            logger.info(
+                '%d threads left in the pool after cleanup',
+                len(self.__active_threads)
+            )
+
+        if len(self.__active_threads) == self.MAX_HTTP_SESSIONS:
+            # force anyone to quit
+            worker = self.__active_threads.keys()[0]
+            logger.warning(
+                'Every thread is busy uploading, finishing "%s"', worker
+            )
+            self.__collect_thread_status_and_kill(worker)
+
+        thread = threading.Thread(
+            target=self._timeout_request_with_result,
+            name='elliptics-loader-%s' % len(self.__active_threads),
+            args=('POST', url),
+            kwargs=dict(data=chunk)
+        )
+        self.__active_threads[thread] = None
+        thread.start()
 
     def _make_url(self, *parts, **args):
         """
@@ -281,7 +500,7 @@ class TimeoutAwareEllipticsStorage(EllipticsStorage):
         for index in xrange(1, len(parts)):
             parts[index] = urllib.quote(parts[index])
 
-        url = super(TimeoutAwareEllipticsStorage, self)._make_url(
+        url = super(EllipticsStorage, self)._make_url(
             *parts,
             **args
         )
