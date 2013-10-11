@@ -38,11 +38,6 @@ class EllipticsStorage(BaseEllipticsStorage):
     MAX_CHUNK_SIZE = getattr(
         conf.settings, 'ELLIPTICS_UPLOAD_CHUNK_SIZE', 3 * 1024 * 1024
     )
-    # Average size of your file. Is used to reserve space in storage.
-    # This helps against fragmentation, so choose it carefully.
-    AVERAGE_FILE_SIZE = getattr(
-        conf.settings, 'ELLIPTICS_AVERAGE_FILE_SIZE', 1024 * 10
-    )
 
     def _request(self, method, url, *args, **kwargs):
         if method in ('POST', 'GET', 'HEAD'):
@@ -107,18 +102,32 @@ class EllipticsStorage(BaseEllipticsStorage):
 
     def _save(self, name, content, append=False):
         """
+        You should have content.size attribute set.
+        This is desired, cause that is the most safe way to upload.
 
         @raise: BaseError
         """
         args = {}
         if append:
-            return self._save_with_append(name, content, **args)
+            self._save_with_append(name, content, **args)
+            return name
 
         try:
             content, length = self.__guess_content_size(content)
         except NotImplementedError:
-            length = None
-        return self._save_file(name, content, length, **args)
+            # length is unknown, so we append
+            uploaded = 0
+            while True:
+                chunk = self._create_chunk(
+                    content, uploaded, self.MAX_CHUNK_SIZE
+                )
+                if not chunk:
+                    return name
+                self._save_with_append(name, chunk, **args)
+                uploaded += len(chunk)
+
+        self._save_file(name, content, length, **args)
+        return name
 
     def _save_with_append(self, name, content, **args):
         args['ioflags'] = 2  # DNET_IO_FLAGS_APPEND = (1<<1)
@@ -154,7 +163,7 @@ class EllipticsStorage(BaseEllipticsStorage):
                 'The size of object cannot be guessed: "%s"', repr(exc)
             )
 
-    def _save_file(self, name, content, length=None, **args):
+    def _save_file(self, name, content, length, **args):
         """
         Save the file into Elliptics.
 
@@ -163,7 +172,7 @@ class EllipticsStorage(BaseEllipticsStorage):
 
         @param name: name of entity in Elliptics
         @param content: the File-like object, or a (byte-)string, iterable.
-        @param length: length of content. May be unknown!
+        @param length: length of content.
         @param args: additional args for the POST-request.
         @return: final name of entity
         @type name: str
@@ -192,13 +201,9 @@ class EllipticsStorage(BaseEllipticsStorage):
             if uploaded == 0 and next_chunk_length > 0:
                 # the first request and more to come
                 # reserve space in storage
-                if length is not None and self.MAX_CHUNK_SIZE < length:
+                if chunk_length < length:
                     # there will be more than 1 of requests
                     request_args['prepare'] = length
-                else:
-                    request_args['prepare'] = max(
-                        self.AVERAGE_FILE_SIZE * 2, chunk_length
-                    )
 
             if uploaded > 0 and next_chunk_length == 0:  # the file is exhausted
                 # this is the last request from a series of, we should commit

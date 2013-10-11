@@ -8,6 +8,7 @@ from django import conf
 
 from .errors import *
 
+
 class BaseEllipticsStorage(storage.Storage):
     """
     Base Django file storage backend for Elliptics via HTTP API.
