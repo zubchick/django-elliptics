@@ -13,9 +13,11 @@ class BaseEllipticsStorage(storage.Storage):
     """
     Base Django file storage backend for Elliptics via HTTP API.
 
-    Configuration parameters:
+    Configuration parameters in your settings.py:
 
-    ELLIPTICS_PREFIX - prefix to prepend to the Django names before passing them to the storage.
+    ELLIPTICS_PREFIX - name of every entity put into or read from E will be prefixed with this string.
+    It works like this: desired_key -> ELLIPTICS_PREFIX + '/' + desired_key.
+
     ELLIPTICS_PUBLIC_URL - URL pointing to public interface of the Elliptics cluster to serve files from.
 
     ELLIPTICS_PRIVATE_URL - URL to send modification requests to.
@@ -95,16 +97,21 @@ class BaseEllipticsStorage(storage.Storage):
             self.settings.public_url, command, self.settings.prefix, *parts, **args
         )
 
-    def _make_url(self, *parts, **args):
+    def _make_url(self, *parts, **query_params):
         url = '/'.join(part.strip('/') for part in parts if part)
 
-        if args:
-            url += '?' + urllib.urlencode(args)
+        if query_params:
+            url += '?' + urllib.urlencode(query_params)
 
         return url
 
 
 class EllipticsFile(base.File):
+    """
+    A File-like object.
+
+    You never instantiate it manually, it serves specific purposes.
+    """
     def __init__(self, name, storage, mode):
         self.name = name
         self._storage = storage
@@ -159,7 +166,10 @@ class EllipticsFile(base.File):
 
     @property
     def closed(self):
-        return bool(self._stream is None)
+        return self._stream is None
 
     def seek(self, offset, mode=0):
+        """
+        @param mode: this value is passed as is into StringIO.seek
+        """
         self._stream.seek(offset, mode)

@@ -48,7 +48,6 @@ class EllipticsStorage(BaseEllipticsStorage):
             raise NotImplementedError('The requested method is not acceptable')
 
     def _timeout_request(self, method, url, *args, **kwargs):
-        global retry_count, retry_count
         error_message = ''
         if method == 'POST':
             retries = self.retries_post
