@@ -18,6 +18,14 @@ FAILED_MESSAGE = (
     '(%s %s). Timeout: %s seconds. "%s"'
 )
 
+# It is a very bad to write big files into elliptics without knowing it's size.
+# That is because E does not have transactions and you will read what has not
+# been written completely.
+BAD_IDEA_TO_WRITE_MESSAGE = (
+    'It is a very bad idea to write to Elliptics'
+    'entities of unknown size'
+)
+
 
 class EllipticsStorage(BaseEllipticsStorage):
     """
@@ -59,7 +67,9 @@ class EllipticsStorage(BaseEllipticsStorage):
         for retry_count in xrange(retries):
             try:
                 started = time.time()
-                response = self._request(method, url, *args, timeout=timeout, **kwargs)
+                response = self._request(
+                    method, url, *args, timeout=timeout, **kwargs
+                )
             except socket.gaierror as exc:
                 raise BaseError(
                     'incorrect elliptics request {0} "{1}": {2}'.format(
@@ -114,6 +124,7 @@ class EllipticsStorage(BaseEllipticsStorage):
         try:
             content, length = self.__guess_content_size(content)
         except NotImplementedError:
+            logger.error(BAD_IDEA_TO_WRITE_MESSAGE)
             # length is unknown, so we append
             uploaded = 0
             while True:
