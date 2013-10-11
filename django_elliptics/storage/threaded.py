@@ -30,8 +30,19 @@ class ThreadedEllipticsStorage(EllipticsStorage):
         self.__active_threads = {}
 
     def __wait_till_all_threads_finish(self):
+        exception = None
         for thread in tuple(self.__active_threads.keys()):
-            self.__collect_thread_status_and_kill(thread)
+            try:
+                self.__collect_thread_status_and_kill(thread)
+            except BaseError as exc:
+                exception = exc
+            except Exception as exc:
+                logger.exception(
+                    'Unhandled exception when joining threads "%s"',
+                    repr(exc)
+                )
+        if exception:
+            raise exception
 
     def __collect_thread_status_and_kill(self, thread):
         thread.join(self.timeout_post * self.retries_post + 100)
