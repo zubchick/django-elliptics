@@ -5,10 +5,14 @@ import socket
 import urllib
 
 import requests
-from django import conf
 
 from .base import BaseEllipticsStorage
 from .errors import *
+from .settings import (
+    ELLIPTICS_GET_CONNECTION_TIMEOUT, ELLIPTICS_GET_CONNECTION_RETRIES,
+    ELLIPTICS_POST_CONNECTION_RETRIES, ELLIPTICS_POST_CONNECTION_TIMEOUT,
+    ELLIPTICS_UPLOAD_CHUNK_SIZE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +38,12 @@ class EllipticsStorage(BaseEllipticsStorage):
     Configuration: same as in base class + some more.
     Supports timeouts and retries on failure (see the config).
     """
-    # timeout of http-session on read requests
-    timeout_get = getattr(conf.settings, 'ELLIPTICS_GET_CONNECTION_TIMEOUT', 3)
-    # number of retries in http-session on read requests
-    retries_get = getattr(conf.settings, 'ELLIPTICS_GET_CONNECTION_RETRIES', 3)
-    # timeout of http-session on save requests
-    timeout_post = getattr(conf.settings, 'ELLIPTICS_POST_CONNECTION_TIMEOUT', 5)
-    # number of retries in http-session on save requests
-    retries_post = getattr(conf.settings, 'ELLIPTICS_POST_CONNECTION_RETRIES', 9)
-    # size of a chunk in bytes, to split content into
-    MAX_CHUNK_SIZE = getattr(
-        conf.settings, 'ELLIPTICS_UPLOAD_CHUNK_SIZE', 3 * 1024 * 1024
-    )
+
+    timeout_get = ELLIPTICS_GET_CONNECTION_TIMEOUT
+    retries_get = ELLIPTICS_GET_CONNECTION_RETRIES
+    timeout_post = ELLIPTICS_POST_CONNECTION_TIMEOUT
+    retries_post = ELLIPTICS_POST_CONNECTION_RETRIES
+    MAX_CHUNK_SIZE = ELLIPTICS_UPLOAD_CHUNK_SIZE
 
     def _request(self, method, url, *args, **kwargs):
         if method in ('POST', 'GET', 'HEAD'):
