@@ -36,7 +36,7 @@ class BaseEllipticsStorage(storage.Storage):
 
     def _build_settings(self, settings):
         return type('settings', (), dict(
-            (name, settings.get(name, self._get_default(name)))
+            (name, settings.get(name) or self._get_default(name))
             for name in self.default_settings))
 
     def _get_default(self, name):

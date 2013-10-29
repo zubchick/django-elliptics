@@ -2,10 +2,9 @@
 import logging
 import threading
 
-from django import conf
-
 from .base import SaveError, BaseError
 from .simple import EllipticsStorage
+from .settings import ELLIPTICS_MAX_SESSIONS
 from .errors import *
 
 logger = logging.getLogger(__name__)
@@ -18,8 +17,7 @@ class ThreadedEllipticsStorage(EllipticsStorage):
     All configuration params from parent have power.
 
     """
-    # maximum number of instantaneous http-sessions to elliptics
-    MAX_HTTP_SESSIONS = getattr(conf.settings, 'ELLIPTICS_MAX_SESSIONS', 5)
+    MAX_HTTP_SESSIONS = ELLIPTICS_MAX_SESSIONS
     # active upload sessions
     __active_threads = None
 
