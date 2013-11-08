@@ -198,7 +198,9 @@ class EllipticsStorage(BaseEllipticsStorage):
             chunk = next_chunk
             chunk_length = next_chunk_length
             # get chunk, probably shorter than MAX_CHUNK_SIZE
-            next_chunk = self._create_chunk(content, uploaded, self.MAX_CHUNK_SIZE)
+            next_chunk = self._create_chunk(
+                content, uploaded + chunk_length, self.MAX_CHUNK_SIZE
+            )
             next_chunk_length = len(next_chunk)
 
             if not (uploaded == 0 and next_chunk_length == 0):
