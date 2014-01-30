@@ -129,6 +129,9 @@ class EllipticsFile(base.File):
         if '+' in mode:
             raise ValueError('mixed mode access not supported yet.')
 
+    def open(self, mode=None):
+        pass
+
     def read(self, num_bytes=None):
         if self._mode != 'r':
             raise ModeError('reading from a file opened for writing.')
