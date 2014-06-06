@@ -32,7 +32,6 @@ class BaseEllipticsStorage(storage.Storage):
     def __init__(self, **kwargs):
         self.settings = self._build_settings(kwargs)
         self.session = requests.session()
-        self.session.config['keep_alive'] = True
 
     def _build_settings(self, settings):
         return type('settings', (), dict(
